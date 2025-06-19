@@ -1,0 +1,105 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environments
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Ollama models and data
+.ollama/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Static files (if generated)
+staticfiles/
+*.css
+*.js
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Redis
+dump.rdb
+
+# MongoDB
+/data/db/
+*.ns
+*.0
+*.1
+
+# Logs
+*.log
+logs/
+
+# OS generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temp files
+*.tmp
+*.temp
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# ChromaDB
+chroma-data/
+chroma.sqlite3
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Documentation
+docs/_build/
+
+# Local development
+local_settings.py
+instance/
+.webassets-cache
+
+# Secrets
+secrets.yml
+credentials.json
+*.pem
+*.key
