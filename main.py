@@ -12,8 +12,8 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.chains import RetrievalQA
-from langchain_community.llms import Ollama
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings
+from langchain_ollama.chat_models import ChatOllama  # Updated import
 import tempfile
 import subprocess
 
@@ -46,13 +46,14 @@ OLLAMA_MODEL = "llama3"  # or "mistral", "gemma"
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client["chat_db"]
 messages_collection = db["messages"]
-redis_client = redis.Redis.from_url(REDIS_URL)
-
-# Starting Ollama service if not running
+# Replace your Redis client initialization with:
 try:
+    redis_client = redis.Redis.from_url(REDIS_URL)
     redis_client.ping()
 except redis.ConnectionError:
-    print("Redis not running, using in-memory cache")
+    print("Using in-memory cache instead of Redis")
+    from fakeredis import FakeRedis
+    redis_client = FakeRedis()  # In-memory fallback
 
 try:
     # Checking if Ollama is running
@@ -61,9 +62,13 @@ except (subprocess.CalledProcessError, FileNotFoundError):
     print("Starting Ollama service...")
     subprocess.Popen(["ollama", "serve"])
 
-# RAG setup
+#RAG setup
 embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
-llm = Ollama(model=OLLAMA_MODEL, temperature=0.7)
+llm = ChatOllama(
+    model="llama3",
+    base_url="http://localhost:11435",
+    temperature=0.7
+)
 vectorstore = None
 qa_chain = None
 
