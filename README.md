@@ -177,13 +177,34 @@ _Run this on another terminal. Keep this terminal running. If you close it, Olla
 
 ### Create `.env` File
 
-In the root folder, create a `.env` file with your config:
+In the root folder, create a `.env` file with your configuration.  
+**Below are examples of how each value should look:**
 
 ```ini
-MONGO_URI=your_mongodb_uri_from_atlas
+# Example MongoDB Atlas URI format:
+MONGO_URI=mongodb+srv://<username>:<password>@cluster0.abc123.mongodb.net/?retryWrites=true&w=majority
+
+# Example Redis URL formats:
+# For local Redis (no password, default port):
 REDIS_URL=redis://localhost:6379
+
+# For Redis with password (cloud or secured local):
+# REDIS_URL=redis://default:<yourpassword>@localhost:6379
+
+# Ollama model name:
 OLLAMA_MODEL=llama3
 ```
+
+**Replace `<username>` and `<password>` in the MongoDB URI with your Atlas credentials.**
+
+**For local development, the default URLs are:**
+- MongoDB:  
+  `MONGO_URI=mongodb://localhost:27017`  
+  (if you are running a local MongoDB server)
+- Redis:  
+  `REDIS_URL=redis://localhost:6379`
+
+---
 
 ---
 
