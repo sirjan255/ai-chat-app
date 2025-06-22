@@ -19,6 +19,7 @@ import subprocess
 import json
 from bson import ObjectId
 from bson.json_util import loads, dumps
+from fastapi import Query
 
 # ================== FastAPI App Initialization ==================
 # Initialize FastAPI application instance
@@ -263,6 +264,43 @@ async def health_check():
     Health check endpoint for readiness/liveness check.
     """
     return {"status": "healthy"}
+
+@app.get("/chat-summary")
+async def chat_summary(limit: int = Query(20, description="Number of messages to summarize")):
+    """
+    Summarize the most recent N chat messages using the LLM.
+    """
+    try:
+        # Fetch the most recent N messages (sorted by timestamp, oldest to newest)
+        messages = list(messages_collection.find().sort("timestamp", -1).limit(limit))
+        messages = list(reversed(messages))  # Oldest first
+
+        # Concatenate messages as a single string for summarization
+        chat_text = ""
+        for msg in messages:
+            sender = msg.get("sender", "user")
+            text = msg.get("text", "")
+            chat_text += f"{sender}: {text}\n"
+
+        if not chat_text.strip():
+            return {"summary": "No chat messages available to summarize."}
+
+        # Prompt for the LLM
+        prompt = (
+            "Summarize the following conversation between a user and an AI assistant:\n\n"
+            f"{chat_text}\n\nSummary:"
+        )
+
+        # Generate summary using the Ollama LLM directly (using your llm object)
+        summary_response = llm.invoke(prompt)
+        if isinstance(summary_response, dict) and "content" in summary_response:
+            summary = summary_response["content"]
+        else:
+            summary = str(summary_response)
+
+        return {"summary": summary.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # =============== Entrypoint for running with 'python main.py' ===============
 if __name__ == "__main__":
