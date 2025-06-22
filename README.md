@@ -267,6 +267,27 @@ ollama list
 
 ---
 
+## 🧪 Testing the API
+
+To test your API endpoints, you can use the included `test_api.py` script.
+
+First, make sure:
+
+- Your virtual environment is activated
+- The app server (`uvicorn main:app --reload`) is running
+- Redis and Ollama are running
+
+Then, run the test script:
+
+```bash
+#Inside activated venv
+python test_api.py
+```
+
+This will execute sample requests against your API and print the responses in the terminal.
+
+---
+
 ## 📝 Notes
 
 - Commands for activating the virtual environment and running the app **must** be executed inside the venv.
