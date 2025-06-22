@@ -96,6 +96,27 @@ def test_chat_summary():
     except Exception as e:
         print("Failed to test /chat-summary:", str(e))
 
+def test_export_conversation():
+    print("\n[TEST] /export-conversation")
+    try:
+        resp = requests.get(f"{BASE_URL}/export-conversation?limit=20", stream=True)
+        print("Status code:", resp.status_code)
+        content_disposition = resp.headers.get("Content-Disposition", "")
+        if resp.status_code == 200 and "attachment" in content_disposition:
+            filename = "conversation_export_test.txt"
+            with open(filename, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=4096):
+                    f.write(chunk)
+            print(f"Exported conversation saved to '{filename}'")
+        else:
+            try:
+                print("Response:", resp.json())
+            except Exception as e:
+                print("Error decoding JSON:", e)
+                print("Raw content:", resp.content)
+    except Exception as e:
+        print("Failed to test /export-conversation:", str(e))
+
 if __name__ == "__main__":
     if wait_for_server():
         test_health()
@@ -103,5 +124,6 @@ if __name__ == "__main__":
         test_messages()
         test_upload_document()
         test_chat_summary()
+        test_export_conversation()
     else:
         print("Exiting: could not reach FastAPI server.")
