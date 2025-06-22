@@ -20,62 +20,74 @@ import json
 from bson import ObjectId
 from bson.json_util import loads, dumps
 
-# Initialize FastAPI
+# ================== FastAPI App Initialization ==================
+# Initialize FastAPI application instance
 app = FastAPI()
 
-# CORS configuration
+# ================== CORS Middleware Setup ==================
+# Add CORS middleware to allow frontend/backend communication across origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins (change in production)
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
-# Setup directories
+# ================== Static & Template Directories ==================
+# Ensure "static" and "templates" directories exist for serving static files and templates
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
+# Mount the static directory to serve static files at /static
 app.mount("/static", StaticFiles(directory="static"), name="static")
+# Setup Jinja2 template rendering for HTML responses
 templates = Jinja2Templates(directory="templates")
 
-# Configuration
+# ================== Configuration ==================
+# Get environment variables or use defaults for MongoDB and Redis connections
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-OLLAMA_MODEL = "llama3"
+OLLAMA_MODEL = "llama3"  # Name of LLM model to use with Ollama
 
-# Database connections
+# ================== Database Connections ==================
+# Connect to MongoDB using pymongo
 mongo_client = MongoClient(MONGO_URI)
-db = mongo_client["chat_db"]
-messages_collection = db["messages"]
+db = mongo_client["chat_db"]  # Database name: chat_db
+messages_collection = db["messages"]  # Collection: messages
 
-# Redis connection
+# ================== Redis Connection ==================
+# Attempt to connect to Redis (for caching/recent messages)
 try:
     redis_client = redis.Redis.from_url(REDIS_URL)
-    redis_client.ping()
+    redis_client.ping()  # Test the connection
 except redis.ConnectionError:
+    # If Redis is not available, fallback to in-memory fake Redis (not persistent)
     print("Using in-memory cache instead of Redis")
     from fakeredis import FakeRedis
     redis_client = FakeRedis()
 
-# RAG setup
+# ================== RAG (Retrieval-Augmented Generation) Setup ==================
+# Embeddings and LLM (Language Model) objects using Ollama
 embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
-llm = ChatOllama(model="llama3", temperature=0.7)
-vectorstore = None
-qa_chain = None
+llm = ChatOllama(model="llama3", temperature=0.7)  # LLM for QA chain
+vectorstore = None  # Will hold vector DB for retrieval
+qa_chain = None     # Will hold the QA retrieval chain
 
-# Models with complete serialization handling
+# ================== Pydantic Models (with Serialization) ==================
 class Message(BaseModel):
-    text: str
-    sender: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    id: Optional[str] = Field(None, alias="_id")
+    text: str  # Message text content
+    sender: str  # "user" or "ai"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)  # Creation time
+    id: Optional[str] = Field(None, alias="_id")  # MongoDB ObjectId as string
 
+    # Validator for timestamp: handles BSON datetime decoding
     @validator('timestamp', pre=True)
     def parse_timestamp(cls, v):
         if isinstance(v, dict) and '$date' in v:
             return datetime.fromisoformat(v['$date'].replace('Z', '+00:00'))
         return v
 
+    # Validator for id: handles MongoDB ObjectId decoding
     @validator('id', pre=True)
     def parse_id(cls, v):
         if isinstance(v, dict) and '$oid' in v:
@@ -85,24 +97,31 @@ class Message(BaseModel):
         return v
 
     class Config:
+        # JSON encoders for serialization
         json_encoders = {
             datetime: lambda v: v.isoformat(),
             ObjectId: lambda v: str(v)
         }
-        allow_population_by_field_name = True
+        allow_population_by_field_name = True  # Allow using "id" instead of "_id"
 
+# Response model for chat endpoint (list of messages and AI response)
 class ChatResponse(BaseModel):
     messages: List[Message]
     ai_response: Optional[str] = None
 
+# ================== RAG Initialization Function ==================
 def initialize_rag():
     global vectorstore, qa_chain
     try:
+        # Load a public PDF (Google's transformer paper) using PyPDFLoader
         loader = PyPDFLoader("https://arxiv.org/pdf/1706.03762.pdf")
         documents = loader.load()
+        # Split the loaded documents into manageable text chunks
         text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         texts = text_splitter.split_documents(documents)
+        # Create a Chroma vectorstore for document retrieval
         vectorstore = Chroma.from_documents(texts, embeddings)
+        # Setup RetrievalQA chain using the LLM and retriever
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
@@ -111,13 +130,15 @@ def initialize_rag():
         print("RAG initialized successfully")
     except Exception as e:
         print(f"RAG initialization error: {str(e)}")
-        qa_chain = None
+        qa_chain = None  # Disable QA if initialization fails
 
+# Call RAG initialization at startup
 initialize_rag()
 
+# ================== Serialization Utilities ==================
 def serialize_for_storage(data: dict) -> str:
     """Convert MongoDB document to JSON string with proper serialization"""
-    return dumps(data)
+    return dumps(data)  # Use bson.json_util.dumps for MongoDB compatibility
 
 def deserialize_from_storage(data: bytes) -> dict:
     """Convert stored JSON back to dict with MongoDB format handling"""
@@ -126,57 +147,71 @@ def deserialize_from_storage(data: bytes) -> dict:
     except Exception:
         return {"text": "Error decoding message", "sender": "system"}
 
+# ================== API Endpoints ==================
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(message: Message):
+    """
+    Handles chat messages from the user, stores them in MongoDB and Redis,
+    generates an AI response using the QA chain if sender is 'user',
+    and returns recent chat history and AI response.
+    """
     try:
-        # Prepare message without id for MongoDB
+        # Prepare message dict without 'id' for MongoDB insertion
         message_dict = message.dict(exclude={'id'})
         
-        # MongoDB insertion
+        # Insert user's message into MongoDB
         result = messages_collection.insert_one(message_dict)
-        message_dict['_id'] = result.inserted_id
+        message_dict['_id'] = result.inserted_id  # Store inserted ObjectId
         
-        # Redis storage with proper serialization
+        # Store the message in Redis (recent history cache)
         redis_key = f"recent_messages:{message.sender}"
         redis_client.lpush(redis_key, serialize_for_storage(message_dict))
-        redis_client.ltrim(redis_key, 0, 4)
+        redis_client.ltrim(redis_key, 0, 4)  # Keep only the 5 most recent messages
         
-        # Generate AI response if needed
+        # AI response (only if sender is user and RAG is available)
         ai_response = None
         if message.sender == "user" and qa_chain:
             try:
+                # Generate AI response using RetrievalQA chain
                 result = qa_chain({"query": message.text})
                 ai_response = result.get("result", "I couldn't generate a response")
                 
-                # Store AI response
+                # Store AI response as a new message
                 ai_message = Message(
                     text=ai_response,
                     sender="ai"
                 )
                 ai_dict = ai_message.dict(exclude={'id'})
-                messages_collection.insert_one(ai_dict)
-                redis_client.lpush(redis_key, serialize_for_storage(ai_dict))
+                messages_collection.insert_one(ai_dict)  # Save to MongoDB
+                redis_client.lpush(redis_key, serialize_for_storage(ai_dict))  # Save to Redis
                 
             except Exception as e:
                 ai_response = f"AI service error: {str(e)}"
         
-        # Retrieve and format messages
+        # Retrieve the recent messages from Redis, deserialize and parse into Message objects
         recent_messages = [
             Message.parse_obj(deserialize_from_storage(msg))
             for msg in redis_client.lrange(redis_key, 0, -1)
         ]
         
+        # Return the API response (recent chat history + AI reply)
         return ChatResponse(
             messages=recent_messages,
             ai_response=ai_response
         )
         
     except Exception as e:
+        # Catch-all error handling: returns 500 with error message
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/messages", response_model=List[Message])
 async def get_messages(limit: int = 10):
+    """
+    Returns the most recent messages from the MongoDB collection, sorted by timestamp (descending).
+    """
     try:
+        # Query the last N messages, sort by timestamp (most recent first)
         messages = list(messages_collection.find().sort("timestamp", -1).limit(limit))
         return [Message.parse_obj(msg) for msg in messages]
     except Exception as e:
@@ -184,17 +219,23 @@ async def get_messages(limit: int = 10):
 
 @app.post("/upload-document")
 async def upload_document(file: UploadFile = File(...)):
+    """
+    Accepts a PDF upload, processes and splits it, recreates the vectorstore and QA chain for new document context.
+    """
     try:
+        # Save the uploaded file to a temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             content = await file.read()
             temp_file.write(content)
             temp_file_path = temp_file.name
         
+        # Load and process the PDF as new document context for RAG
         loader = PyPDFLoader(temp_file_path)
         documents = loader.load()
         text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         texts = text_splitter.split_documents(documents)
         
+        # Update global vectorstore and QA chain to use the uploaded document
         global vectorstore, qa_chain
         vectorstore = Chroma.from_documents(texts, embeddings)
         qa_chain = RetrievalQA.from_chain_type(
@@ -203,6 +244,7 @@ async def upload_document(file: UploadFile = File(...)):
             retriever=vectorstore.as_retriever()
         )
         
+        # Remove temporary file after processing
         os.unlink(temp_file_path)
         return {"message": "Document processed successfully"}
     except Exception as e:
@@ -210,12 +252,20 @@ async def upload_document(file: UploadFile = File(...)):
 
 @app.get("/")
 async def read_root(request: Request):
+    """
+    Serves the root HTML page using Jinja2 templates (index.html).
+    """
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/health")
 async def health_check():
+    """
+    Health check endpoint for readiness/liveness check.
+    """
     return {"status": "healthy"}
 
+# =============== Entrypoint for running with 'python main.py' ===============
 if __name__ == "__main__":
     import uvicorn
+    # Run the FastAPI app with Uvicorn server, listening on all interfaces at port 8000
     uvicorn.run(app, host="0.0.0.0", port=8000)
