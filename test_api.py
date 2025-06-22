@@ -83,11 +83,25 @@ def test_upload_document():
     except Exception as e:
         print(f"Failed to download or process PDF: {str(e)}")
 
+def test_chat_summary():
+    print("\n[TEST] /chat-summary")
+    try:
+        resp = requests.get(f"{BASE_URL}/chat-summary?limit=20")
+        print("Status code:", resp.status_code)
+        try:
+            print("Response:", resp.json())
+        except Exception as e:
+            print("Error decoding JSON:", e)
+            print("Raw content:", resp.content)
+    except Exception as e:
+        print("Failed to test /chat-summary:", str(e))
+
 if __name__ == "__main__":
     if wait_for_server():
         test_health()
         test_chat()
         test_messages()
         test_upload_document()
+        test_chat_summary()
     else:
         print("Exiting: could not reach FastAPI server.")
