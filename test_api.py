@@ -55,20 +55,33 @@ def test_messages():
 
 def test_upload_document():
     print("\n[TEST] /upload-document")
-    # You can use any small PDF for testing
-    sample_pdf = "sample.pdf"
-    if not os.path.exists(sample_pdf):
-        print("No 'sample.pdf' found. Skipping upload-document test.")
-        return
-    with open(sample_pdf, "rb") as f:
-        files = {"file": (sample_pdf, f, "application/pdf")}
+    
+    # URL of the PDF you want to use for testing
+    pdf_url = "https://study.iitm.ac.in/ds/assets/pdf/Brochure.pdf"
+    
+    try:
+        # Download the PDF directly
+        print(f"Downloading test PDF from {pdf_url}...")
+        response = requests.get(pdf_url)
+        response.raise_for_status()  # Raise exception for bad status codes
+        
+        # Prepare the file for upload
+        files = {
+            "file": ("iitm_brochure.pdf", response.content, "application/pdf")
+        }
+        
+        # Send to your endpoint
         resp = requests.post(f"{BASE_URL}/upload-document", files=files)
         print("Status code:", resp.status_code)
+        
         try:
             print("Response:", resp.json())
         except Exception as e:
             print("Error decoding JSON:", e)
             print("Raw content:", resp.content)
+            
+    except Exception as e:
+        print(f"Failed to download or process PDF: {str(e)}")
 
 if __name__ == "__main__":
     if wait_for_server():
