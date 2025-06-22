@@ -20,6 +20,8 @@ import json
 from bson import ObjectId
 from bson.json_util import loads, dumps
 from fastapi import Query
+from fastapi.responses import StreamingResponse
+from fastapi import Query
 
 # ================== FastAPI App Initialization ==================
 # Initialize FastAPI application instance
@@ -299,6 +301,42 @@ async def chat_summary(limit: int = Query(20, description="Number of messages to
             summary = str(summary_response)
 
         return {"summary": summary.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+        
+# ================== Export Conversation Endpoint ==================
+# Endpoint to export the most recent chat messages as a downloadable text file
+@app.get("/export-conversation")
+async def export_conversation(
+    limit: int = Query(50, description="Number of recent messages to export (default: 50)")
+):
+    """
+    Export the most recent N chat messages as a downloadable text file.
+    """
+    try:
+        # Fetch messages, newest first then reverse for natural order
+        messages = list(messages_collection.find().sort("timestamp", -1).limit(limit))
+        messages = list(reversed(messages))
+
+        # Build the export content
+        export_lines = []
+        for msg in messages:
+            time_str = msg.get("timestamp")
+            if isinstance(time_str, dict) and "$date" in time_str:
+                time_str = time_str["$date"]
+            export_lines.append(f"[{time_str}] {msg.get('sender', '')}: {msg.get('text', '')}")
+        export_text = "\n".join(export_lines)
+
+        # Provide as a downloadable text file
+        def file_iterator():
+            yield export_text
+
+        return StreamingResponse(
+            file_iterator(),
+            media_type="text/plain",
+            headers={"Content-Disposition": "attachment; filename=conversation_export.txt"}
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
